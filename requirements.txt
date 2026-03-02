@@ -1,0 +1,23 @@
+# GitHub Auto Sync 核心依赖
+# 安装命令: pip install -r requirements.txt
+
+# CLI 框架
+click>=8.0.0
+
+# GitHub API 客户端
+PyGithub>=1.59.0
+
+# Git 操作库
+GitPython>=3.1.0
+
+# 文件系统监控
+watchdog>=3.0.0
+
+# YAML 配置文件解析
+pyyaml>=6.0
+
+# 安全凭证存储
+keyring>=24.0.0
+
+# 环境变量管理
+python-dotenv>=1.0.0

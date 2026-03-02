@@ -1,0 +1,44 @@
+# MANIFEST.in - 指定需要包含在分发包中的额外文件
+# 更多信息: https://packaging.python.org/guides/using-manifest-in/
+
+# 包含文档
+recursive-include docs *.md *.rst *.txt *.py *.yaml *.yml
+graft docs
+
+# 包含测试
+recursive-include tests *.py
+graft tests
+
+# 包含根目录下的重要文件
+include README.md
+include LICENSE
+include requirements.txt
+include CHANGELOG.md
+include CONTRIBUTING.md
+
+# 包含类型标记文件
+include src/github_auto_sync/py.typed
+
+# 排除不需要的文件
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude *.dylib
+
+# 排除开发环境文件
+exclude .gitignore
+exclude .pre-commit-config.yaml
+exclude tox.ini
+exclude Makefile
+
+# 排除 CI/CD 配置 (可选,如果需要包含请注释掉)
+recursive-exclude .github *
+recursive-exclude .git *
+
+# 排除构建产物
+recursive-exclude build *
+recursive-exclude dist *
+recursive-exclude *.egg-info *
