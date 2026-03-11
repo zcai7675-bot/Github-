@@ -754,6 +754,210 @@ class GitHubClient:
             self._handle_github_exception(e, "搜索仓库失败")
             return []
 
+    def create_release(
+        self,
+        repo_name: str,
+        tag_name: str,
+        name: str,
+        body: str,
+        draft: bool = False,
+        prerelease: bool = False,
+        target_commitish: str = "main",
+        owner: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        创建 GitHub Release
+
+        Args:
+            repo_name: 仓库名称
+            tag_name: 标签名称（例如：v1.0.0）
+            name: Release 标题
+            body: Release 描述（支持 Markdown）
+            draft: 是否为草稿
+            prerelease: 是否为预发布版本
+            target_commitish: 目标分支或提交 SHA
+            owner: 仓库所有者，默认为当前用户
+
+        Returns:
+            Release 信息字典
+
+        Raises:
+            RepositoryNotFoundError: 仓库不存在
+            PermissionError: 权限不足
+
+        Examples:
+            >>> client = GitHubClient()
+            >>> release = client.create_release(
+            ...     "my-project",
+            ...     "v1.0.0",
+            ...     "版本 1.0.0",
+            ...     "## 更新内容\\n- 新功能 A\\n- 修复 Bug B"
+            ... )
+            >>> print(f"Release URL: {release['html_url']}")
+        """
+        try:
+            # 解析仓库名称
+            if "/" in repo_name:
+                full_name = repo_name
+            elif owner:
+                full_name = f"{owner}/{repo_name}"
+            else:
+                user = self._get_user()
+                full_name = f"{user.login}/{repo_name}"
+
+            repo = self.github.get_repo(full_name)
+
+            # 创建 Release
+            release = repo.create_git_release(
+                tag=tag_name,
+                name=name,
+                message=body,
+                draft=draft,
+                prerelease=prerelease,
+                target_commitish=target_commitish,
+            )
+
+            logger.info(f"Release 创建成功: {release.html_url}")
+            return self._release_to_dict(release)
+
+        except GithubException as e:
+            self._handle_github_exception(e, f"创建 Release '{tag_name}' 失败")
+            return {}
+
+    def upload_release_asset(
+        self,
+        repo_name: str,
+        release_id: int,
+        file_path: str,
+        label: Optional[str] = None,
+        owner: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        上传文件到 Release
+
+        Args:
+            repo_name: 仓库名称
+            release_id: Release ID
+            file_path: 文件路径
+            label: 文件标签（可选）
+            owner: 仓库所有者，默认为当前用户
+
+        Returns:
+            上传的资源信息字典
+
+        Examples:
+            >>> client = GitHubClient()
+            >>> asset = client.upload_release_asset(
+            ...     "my-project",
+            ...     123456,
+            ...     "./dist/app.zip",
+            ...     "应用程序压缩包"
+            ... )
+        """
+        try:
+            # 解析仓库名称
+            if "/" in repo_name:
+                full_name = repo_name
+            elif owner:
+                full_name = f"{owner}/{repo_name}"
+            else:
+                user = self._get_user()
+                full_name = f"{user.login}/{repo_name}"
+
+            repo = self.github.get_repo(full_name)
+            release = repo.get_release(release_id)
+
+            # 上传文件
+            asset = release.upload_asset(
+                path=file_path,
+                label=label,
+            )
+
+            logger.info(f"文件上传成功: {asset.browser_download_url}")
+            return self._asset_to_dict(asset)
+
+        except GithubException as e:
+            self._handle_github_exception(e, f"上传文件到 Release 失败")
+            return {}
+
+    def list_releases(
+        self,
+        repo_name: str,
+        owner: Optional[str] = None,
+        limit: int = 30,
+    ) -> List[Dict[str, Any]]:
+        """
+        列出仓库的所有 Release
+
+        Args:
+            repo_name: 仓库名称
+            owner: 仓库所有者，默认为当前用户
+            limit: 返回结果数量限制
+
+        Returns:
+            Release 信息字典列表
+
+        Examples:
+            >>> client = GitHubClient()
+            >>> releases = client.list_releases("my-project")
+            >>> for release in releases:
+            ...     print(f"{release['tag_name']}: {release['name']}")
+        """
+        try:
+            # 解析仓库名称
+            if "/" in repo_name:
+                full_name = repo_name
+            elif owner:
+                full_name = f"{owner}/{repo_name}"
+            else:
+                user = self._get_user()
+                full_name = f"{user.login}/{repo_name}"
+
+            repo = self.github.get_repo(full_name)
+            releases = repo.get_releases()
+
+            result = []
+            for i, release in enumerate(releases):
+                if i >= limit:
+                    break
+                result.append(self._release_to_dict(release))
+
+            return result
+
+        except GithubException as e:
+            self._handle_github_exception(e, f"获取 Release 列表失败")
+            return []
+
+    def _release_to_dict(self, release) -> Dict[str, Any]:
+        """将 Release 对象转换为字典"""
+        return {
+            "id": release.id,
+            "tag_name": release.tag_name,
+            "name": release.title,
+            "body": release.body,
+            "draft": release.draft,
+            "prerelease": release.prerelease,
+            "html_url": release.html_url,
+            "upload_url": release.upload_url,
+            "created_at": release.created_at.isoformat() if release.created_at else None,
+            "published_at": release.published_at.isoformat() if release.published_at else None,
+            "assets": [self._asset_to_dict(asset) for asset in release.get_assets()],
+        }
+
+    def _asset_to_dict(self, asset) -> Dict[str, Any]:
+        """将 Release Asset 对象转换为字典"""
+        return {
+            "id": asset.id,
+            "name": asset.name,
+            "size": asset.size,
+            "download_count": asset.download_count,
+            "browser_download_url": asset.browser_download_url,
+            "label": asset.label,
+            "content_type": asset.content_type,
+            "created_at": asset.created_at.isoformat() if asset.created_at else None,
+            "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
+        }
+
     def __enter__(self):
         """上下文管理器入口"""
         return self

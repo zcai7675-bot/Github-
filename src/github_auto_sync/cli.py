@@ -1025,6 +1025,238 @@ def repo_list(ctx: Context, n: int, output_json: bool) -> None:
 
 
 # ============================================================================
+# Release 命令组
+# ============================================================================
+
+@cli.group(name="release")
+def release():
+    """
+    Release 管理命令
+
+    用于创建和管理 GitHub Release
+
+    示例:
+        github-auto-sync release create v1.0.0 -n "版本 1.0.0" -b "更新内容"
+        github-auto-sync release list
+        github-auto-sync release upload v1.0.0 ./dist/app.zip
+    """
+    pass
+
+
+@release.command(name="create")
+@click.argument("tag")
+@click.option("--name", "-n", required=True, help="Release 标题")
+@click.option("--body", "-b", required=True, help="Release 描述（支持 Markdown）")
+@click.option("--draft", is_flag=True, help="创建为草稿")
+@click.option("--prerelease", is_flag=True, help="标记为预发布版本")
+@click.option("--target", "-t", default="main", help="目标分支（默认: main）")
+@click.option("--repo", "-r", help="仓库名称（默认使用配置中的第一个仓库）")
+@click.pass_context
+def release_create(
+    ctx: Context,
+    tag: str,
+    name: str,
+    body: str,
+    draft: bool,
+    prerelease: bool,
+    target: str,
+    repo: Optional[str],
+) -> None:
+    """
+    创建 GitHub Release
+
+    TAG: 标签名称（例如：v1.0.0）
+
+    示例:
+        github-auto-sync release create v1.0.0 -n "版本 1.0.0" -b "## 更新内容"
+        github-auto-sync release create v1.0.0 -n "测试版" -b "预览版本" --prerelease
+        github-auto-sync release create v1.0.0 -n "草稿" -b "未完成" --draft
+    """
+    cli_ctx: CLIContext = ctx.obj
+
+    try:
+        # 检查认证
+        if not is_authenticated():
+            error("未认证，请先运行 'github-auto-sync auth login'")
+            sys.exit(1)
+
+        # 获取仓库名称
+        if not repo:
+            config = cli_ctx.config
+            if config.repositories:
+                repo = config.repositories[0].name
+            else:
+                error("未指定仓库名称，请使用 -r 选项或配置默认仓库")
+                sys.exit(1)
+
+        client = GitHubClient()
+
+        info(f"正在创建 Release: {tag}")
+
+        release_info = client.create_release(
+            repo_name=repo,
+            tag_name=tag,
+            name=name,
+            body=body,
+            draft=draft,
+            prerelease=prerelease,
+            target_commitish=target,
+        )
+
+        if release_info:
+            success(f"Release 创建成功!")
+            info(f"URL: {release_info['html_url']}")
+            info(f"ID: {release_info['id']}")
+        else:
+            error("创建 Release 失败")
+            sys.exit(1)
+
+    except Exception as e:
+        handle_error(e, cli_ctx.verbose)
+        sys.exit(1)
+
+
+@release.command(name="upload")
+@click.argument("tag")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--label", "-l", help="文件标签")
+@click.option("--repo", "-r", help="仓库名称")
+@click.pass_context
+def release_upload(
+    ctx: Context,
+    tag: str,
+    file_path: str,
+    label: Optional[str],
+    repo: Optional[str],
+) -> None:
+    """
+    上传文件到 Release
+
+    TAG: 标签名称
+    FILE_PATH: 文件路径
+
+    示例:
+        github-auto-sync release upload v1.0.0 ./dist/app.zip
+        github-auto-sync release upload v1.0.0 ./app.zip -l "应用程序"
+    """
+    cli_ctx: CLIContext = ctx.obj
+
+    try:
+        # 检查认证
+        if not is_authenticated():
+            error("未认证，请先运行 'github-auto-sync auth login'")
+            sys.exit(1)
+
+        # 获取仓库名称
+        if not repo:
+            config = cli_ctx.config
+            if config.repositories:
+                repo = config.repositories[0].name
+            else:
+                error("未指定仓库名称，请使用 -r 选项或配置默认仓库")
+                sys.exit(1)
+
+        client = GitHubClient()
+
+        # 获取 Release ID
+        releases = client.list_releases(repo_name=repo)
+        release_id = None
+        for r in releases:
+            if r["tag_name"] == tag:
+                release_id = r["id"]
+                break
+
+        if not release_id:
+            error(f"未找到 Release: {tag}")
+            sys.exit(1)
+
+        info(f"正在上传文件到 Release: {tag}")
+
+        asset = client.upload_release_asset(
+            repo_name=repo,
+            release_id=release_id,
+            file_path=file_path,
+            label=label,
+        )
+
+        if asset:
+            success(f"文件上传成功!")
+            info(f"下载链接: {asset['browser_download_url']}")
+        else:
+            error("上传文件失败")
+            sys.exit(1)
+
+    except Exception as e:
+        handle_error(e, cli_ctx.verbose)
+        sys.exit(1)
+
+
+@release.command(name="list")
+@click.option("--repo", "-r", help="仓库名称")
+@click.option("--limit", "-n", default=10, help="显示数量限制")
+@click.pass_context
+def release_list(ctx: Context, repo: Optional[str], n: int) -> None:
+    """
+    列出 Release
+
+    示例:
+        github-auto-sync release list
+        github-auto-sync release list -n 20
+    """
+    cli_ctx: CLIContext = ctx.obj
+
+    try:
+        # 检查认证
+        if not is_authenticated():
+            error("未认证，请先运行 'github-auto-sync auth login'")
+            sys.exit(1)
+
+        # 获取仓库名称
+        if not repo:
+            config = cli_ctx.config
+            if config.repositories:
+                repo = config.repositories[0].name
+            else:
+                error("未指定仓库名称，请使用 -r 选项或配置默认仓库")
+                sys.exit(1)
+
+        client = GitHubClient()
+
+        info(f"正在获取 Release 列表...")
+
+        releases = client.list_releases(repo_name=repo, limit=n)
+
+        if releases:
+            headers = ["标签", "名称", "类型", "发布时间"]
+            rows = []
+            for r in releases:
+                release_type = ""
+                if r.get("draft"):
+                    release_type = "草稿"
+                elif r.get("prerelease"):
+                    release_type = "预发布"
+                else:
+                    release_type = "正式版"
+
+                published = r.get("published_at", "")[:10] if r.get("published_at") else "未发布"
+
+                rows.append([
+                    r["tag_name"],
+                    r["name"],
+                    release_type,
+                    published,
+                ])
+            print_table(headers, rows, cli_ctx.verbose)
+            info(f"共 {len(releases)} 个 Release")
+        else:
+            info("暂无 Release")
+
+    except Exception as e:
+        handle_error(e, cli_ctx.verbose)
+        sys.exit(1)
+
+
+# ============================================================================
 # 入口点
 # ============================================================================
 
